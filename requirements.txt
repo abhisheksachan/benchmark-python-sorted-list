@@ -1,3 +1,4 @@
 sortedcontainers
 matplotlib
 numpy
+redis
