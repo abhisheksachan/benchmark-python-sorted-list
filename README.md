@@ -6,7 +6,7 @@ The goal of this benchmark is to compare three approaches for maintaining a sort
 2.  **`SortedList` (from `sortedcontainers`)**: Using a specialized library designed for high-performance sorted collections without sacrificing the simplicity of Python.
 3.  **Redis Sorted Set (`ZSET`)**: An out-of-process, network-backed sorted set using `ZADD` for inserts and `ZCOUNT` for rank queries — the Redis equivalent of bisect.
 
-We evaluate performance across varying scales: **1,000**, **100,000**, **1,000,000**, and **100,000,000** elements.
+We evaluate performance across varying scales: **1K**, **100K**, **1M**, **10M**, and **100M** elements.
 
 ## 🛠️ The Problem
 Maintaining a sorted list is a common requirement (e.g., maintaining a timeline of events, priority queues, lookup tables). 
@@ -20,22 +20,22 @@ Maintaining a sorted list is a common requirement (e.g., maintaining a timeline 
 
 Running on **macOS (Arm64)** with Python 3.14. Redis 7.x on localhost.
 
-| Size (N) | Method | Bulk Build (s) | Insertion Avg (s) | Search Avg (s) |
+| Size (N) | Method | Bulk Build (s) | Insert Avg (µs) | Search Avg (µs) |
 | :--- | :--- | :--- | :--- | :--- |
-| **1,000** | List+Bisect | 0.000321 | 0.00000061 | 0.00000038 |
-| | SortedList | 0.000322 | 0.00000104 | 0.00000054 |
-| | Redis ZSet | 0.009631 | 0.00011560 | 0.00009172 |
-| **100,000** | List+Bisect | 0.030940 | 0.00003096 | 0.00000068 |
-| | SortedList | 0.030989 | 0.00000163 | 0.00000147 |
-| | Redis ZSet | 0.684063 | 0.00012037 | 0.00008600 |
-| **1,000,000** | List+Bisect | 0.390949 | 0.00032625 | 0.00000142 |
-| | SortedList | 0.411687 | 0.00000339 | 0.00000304 |
-| | Redis ZSet | 7.195692 | 0.00010450 | 0.00009870 |
-| **10,000,000** | List+Bisect | 4.020966 | 0.00284678 | 0.00000262 |
-| | SortedList | 4.354274 | 0.00000472 | 0.00001006 |
-| | Redis ZSet | 79.446143 | 0.00009773 | 0.00009376 |
-| **100,000,000** | List+Bisect | 50.565074 | 0.05093679 | 0.00005957 |
-| | SortedList | 69.677029 | 0.00002635 | 0.00062194 |
+| **1K** | List+Bisect | 0.000321 | 0.61 | 0.38 |
+| | SortedList | 0.000322 | 1.04 | 0.54 |
+| | Redis ZSet | 0.009631 | 115.60 | 91.72 |
+| **100K** | List+Bisect | 0.030940 | 30.96 | 0.68 |
+| | SortedList | 0.030989 | 1.63 | 1.47 |
+| | Redis ZSet | 0.684063 | 120.37 | 86.00 |
+| **1M** | List+Bisect | 0.390949 | 326.25 | 1.42 |
+| | SortedList | 0.411687 | 3.39 | 3.04 |
+| | Redis ZSet | 7.195692 | 104.50 | 98.70 |
+| **10M** | List+Bisect | 4.020966 | 2,846.78 | 2.62 |
+| | SortedList | 4.354274 | 4.72 | 10.06 |
+| | Redis ZSet | 79.446143 | 97.73 | 93.76 |
+| **100M** | List+Bisect | 50.565074 | 50,936.79 | 59.57 |
+| | SortedList | 69.677029 | 26.35 | 621.94 |
 | | Redis ZSet | SKIPPED (>10M) | — | — |
 
 > Redis ZSet is skipped at 100M because storing 100M members locally exhausts practical RAM (~17GB needed) and bulk-load time (~800s estimated).
