@@ -1,10 +1,13 @@
 
+import argparse
+import csv
+import gc
+import os
+import random
+import sys
 import time
 import bisect
-import random
 from sortedcontainers import SortedList
-import sys
-import gc
 
 try:
     import redis as redis_lib
@@ -73,7 +76,7 @@ def benchmark_sorted_list(size, insert_count=100):
 # Redis sorted sets use score-sorted members.
 # ZADD  → equivalent to insort / sl.add
 # ZCOUNT key -inf (val → count of elements with score < val → equivalent to bisect_left
-REDIS_MAX_SIZE = 1_000_000   # Redis uses too much memory beyond this for a local benchmark
+REDIS_MAX_SIZE = 10_000_000  # Redis uses too much memory beyond this for a local benchmark
 REDIS_PIPELINE_CHUNK = 5_000  # flush pipeline every N commands to limit client-side buffering
 
 def benchmark_redis_sorted_set(size, insert_count=100):
@@ -122,9 +125,25 @@ def benchmark_redis_sorted_set(size, insert_count=100):
     r.delete(key)
     return bulk_time, insert_time, search_time
 
+ALL_SIZES = [1_000, 100_000, 1_000_000, 10_000_000, 100_000_000]
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Benchmark sorted collections")
+    parser.add_argument(
+        "--sizes", nargs="+", type=int, default=ALL_SIZES,
+        metavar="N",
+        help="Space-separated list of sizes to benchmark (default: all). "
+             "E.g. --sizes 10000000"
+    )
+    parser.add_argument(
+        "--insert-count", type=int, default=None, metavar="N",
+        help="Number of insert/search ops per size (default: 100, or 10 for >=100M)"
+    )
+    return parser.parse_args()
+
 def main():
-    # User requested: 1k, 100k, 1M, 100M
-    sizes = [1_000, 100_000, 1_000_000, 100_000_000]
+    args = parse_args()
+    sizes = sorted(set(args.sizes))
     results = []
 
     print(f"{'Size':>12} | {'Method':>15} | {'Bulk Build (s)':>15} | {'Inst Avg (s)':>12} | {'Srch Avg (s)':>12}")
@@ -133,7 +152,10 @@ def main():
     for size in sizes:
         # For 100M, we might need to skip List+Bisect insertion if it's too slow
         # but the user asked for comparison. I'll attempt with a very small insert count for 100M.
-        ins_count = 100 if size < 100_000_000 else 10 # Only 10 inserts for 100M List to avoid long hang
+        if args.insert_count is not None:
+            ins_count = args.insert_count
+        else:
+            ins_count = 100 if size < 100_000_000 else 10  # Only 10 inserts for 100M to avoid long hang
         
         try:
             l_bulk, l_ins, l_search = benchmark_list_bisect(size, ins_count)
@@ -161,15 +183,26 @@ def main():
                 except Exception as e:
                     print(f"{size:12,d} | {'Redis ZSet':>15} | {'SKIP: ' + str(e)[:20]:>15} | {'-':>12} | {'-':>12}")
         else:
-            print(f"{size:12,d} | {'Redis ZSet':>15} | {'SKIPPED (>1M)':>15} | {'-':>12} | {'-':>12}")
+            print(f"{size:12,d} | {'Redis ZSet':>15} | {'SKIPPED (>10M)':>15} | {'-':>12} | {'-':>12}")
             
         print("-" * 85)
 
-    # Save results to file for later
-    with open("results.csv", "w") as f:
-        f.write("Size,Method,BulkTime,InsertTime,SearchTime\n")
+    # Merge new results into results.csv (overwrite rows for benchmarked sizes only)
+    csv_path = "results.csv"
+    ran_sizes = {r[0] for r in results}
+    existing = []
+    if os.path.exists(csv_path):
+        with open(csv_path, newline="") as f:
+            reader = csv.reader(f)
+            next(reader, None)  # skip header
+            existing = [row for row in reader if int(row[0]) not in ran_sizes]
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Size", "Method", "BulkTime", "InsertTime", "SearchTime"])
+        writer.writerows(existing)
         for r in results:
-            f.write(f"{r[0]},{r[1]},{r[2]},{r[3]},{r[4]}\n")
+            writer.writerow(list(r))
+    print(f"\nresults.csv updated (sizes benchmarked: {sorted(ran_sizes)})")
 
 if __name__ == "__main__":
     main()

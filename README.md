@@ -31,11 +31,14 @@ Running on **macOS (Arm64)** with Python 3.14. Redis 7.x on localhost.
 | **1,000,000** | List+Bisect | 0.390949 | 0.00032625 | 0.00000142 |
 | | SortedList | 0.411687 | 0.00000339 | 0.00000304 |
 | | Redis ZSet | 7.195692 | 0.00010450 | 0.00009870 |
+| **10,000,000** | List+Bisect | 4.020966 | 0.00284678 | 0.00000262 |
+| | SortedList | 4.354274 | 0.00000472 | 0.00001006 |
+| | Redis ZSet | 79.446143 | 0.00009773 | 0.00009376 |
 | **100,000,000** | List+Bisect | 50.565074 | 0.05093679 | 0.00005957 |
 | | SortedList | 69.677029 | 0.00002635 | 0.00062194 |
-| | Redis ZSet | SKIPPED (>1M) | — | — |
+| | Redis ZSet | SKIPPED (>10M) | — | — |
 
-> Redis ZSet is skipped at 100M because storing 100M members locally exhausts practical RAM and bulk-load time.
+> Redis ZSet is skipped at 100M because storing 100M members locally exhausts practical RAM (~17GB needed) and bulk-load time (~800s estimated).
 
 ---
 
@@ -43,24 +46,25 @@ Running on **macOS (Arm64)** with Python 3.14. Redis 7.x on localhost.
 
 ### 1. Scaling Bottleneck: The "Insertion Wall"
 The data confirms that `List+Bisect` hits a performance wall at 1M+ elements.
+- At **10M elements**, `SortedList` insert (0.005 ms) is **~603× faster** than `List+Bisect` (2.85 ms).
 - At **100M elements**, `SortedList` is **~1935× faster** than `List+Bisect` at inserting new data (0.026 ms vs 50.9 ms per insert).
 - If your application involves a continuous stream of data (like logging or order books), `SortedList` is mandatory at scale.
 
 ### 2. The Network Tax of Redis
-Redis sorted sets pay a fixed per-operation network cost (~0.10–0.12 ms round-trip for inserts, ~0.09–0.10 ms for searches) regardless of data size.
+Redis sorted sets pay a fixed per-operation network cost (~0.09–0.12 ms round-trip) regardless of data size.
 - At **1,000 elements**: Redis insert is ~190× slower than `List+Bisect` and ~111× slower than `SortedList`.
-- At **1,000,000 elements**: Redis insert is ~3× faster than `List+Bisect` but ~31× *slower* than `SortedList`.
-- Redis's `O(log N)` skip-list insert *would* beat `List+Bisect` at large N, but is always dominated by `SortedList` for pure in-process throughput.
+- At **10,000,000 elements**: Redis insert (0.098 ms) is ~29× faster than `List+Bisect` (2.85 ms) but still **~21× slower** than `SortedList` (0.005 ms).
+- Redis's `O(log N)` skip-list insert beats `List+Bisect` somewhere around 1M–10M elements, but is always dominated by `SortedList` for pure in-process throughput.
 
 ### 3. The Search Paradox
 `bisect.bisect_left` on a contiguous C array remains the fastest search at every scale.
-- At **1M**: `List+Bisect` search (1.42 µs) is ~2.1× faster than `SortedList` (3.04 µs) and ~69× faster than Redis (98.7 µs).
+- At **10M**: `List+Bisect` search (2.6 µs) is ~3.8× faster than `SortedList` (10 µs) and ~36× faster than Redis (94 µs).
 - Redis search latency is flat (~0.09–0.10 ms) because it is network-bound, not algorithm-bound.
 
 ### 4. Bulk Loading
-- `list.sort()` and `SortedList(data)` are neck-and-neck at all sizes up to 1M.
+- `list.sort()` and `SortedList(data)` are neck-and-neck at all sizes up to 10M.
 - At 100M, `list.sort()` (50.6 s) is 37% faster than `SortedList` (69.7 s).
-- Redis bulk load at 1M took **7.2 s** via pipelined `ZADD` — far slower than in-process, but pipeline batching brought it much closer to naïve per-call Redis.
+- Redis bulk load via pipelined `ZADD` scales linearly: 0.68s (100k) → 7.2s (1M) → 79.4s (10M).
 
 ### 🚀 Final Verdict
 
@@ -90,5 +94,13 @@ Redis sorted sets pay a fixed per-operation network cost (~0.10–0.12 ms round-
    ```
 4. Run the benchmark:
    ```bash
+   # All sizes (1k, 100k, 1M, 10M, 100M)
    python3 benchmark.py
+
+   # Specific sizes only
+   python3 benchmark.py --sizes 10000000
+   python3 benchmark.py --sizes 1000000 10000000
+
+   # Override insert/search operation count
+   python3 benchmark.py --sizes 10000000 --insert-count 50
    ```
